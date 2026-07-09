@@ -1,0 +1,29 @@
+hal\usart.o: ../Core/Src/usart.c
+hal\usart.o: ../Core/Inc/usart.h
+hal\usart.o: ../Core/Inc/main.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
+hal\usart.o: ../Core/Inc/stm32f1xx_hal_conf.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_def.h
+hal\usart.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f1xx.h
+hal\usart.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f103xb.h
+hal\usart.o: ../Drivers/CMSIS/Include/core_cm3.h
+hal\usart.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+hal\usart.o: ../Drivers/CMSIS/Include/cmsis_version.h
+hal\usart.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
+hal\usart.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
+hal\usart.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/system_stm32f1xx.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h
+hal\usart.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc_ex.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio_ex.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_exti.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_dma.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_dma_ex.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_cortex.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_flash.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_flash_ex.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h
+hal\usart.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h

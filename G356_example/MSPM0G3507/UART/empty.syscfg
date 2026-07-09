@@ -1,0 +1,70 @@
+/**
+ * These arguments were used when this file was generated. They will be automatically applied on subsequent loads
+ * via the GUI or CLI. Run CLI with '--help' for additional information on how to override these arguments.
+ * @cliArgs --device "MSPM0G350X" --part "Default" --package "LQFP-64(PM)" --product "mspm0_sdk@2.10.00.04"
+ * @v2CliArgs --device "MSPM0G3507" --package "LQFP-64(PM)" --product "mspm0_sdk@2.10.00.04"
+ * @versions {"tool":"1.26.2+4477"}
+ */
+
+/**
+ * Import the modules used in this configuration.
+ */
+const SYSCTL = scripting.addModule("/ti/driverlib/SYSCTL");
+const UART   = scripting.addModule("/ti/driverlib/UART", {}, false);
+const UART1  = UART.addInstance();
+const UART2  = UART.addInstance();
+
+/**
+ * Write custom configuration values to the imported modules.
+ */
+const Board = scripting.addModule("/ti/driverlib/Board", {}, false);
+
+SYSCTL.forceDefaultClkConfig = true;
+
+// UART_DEBUG: prints parsed G356 data to the PC over the LaunchPad's onboard
+// XDS110 virtual COM port.
+UART1.$name                            = "UART_DEBUG";
+UART1.targetBaudRate                   = 115200;
+UART1.peripheral.$assign               = "UART0";
+UART1.peripheral.rxPin.$assign         = "PA11";
+UART1.peripheral.txPin.$assign         = "PA10";
+UART1.txPinConfig.direction            = scripting.forceWrite("OUTPUT");
+UART1.txPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART1.txPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART1.txPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART1.txPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric0";
+UART1.rxPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART1.rxPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART1.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART1.rxPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric1";
+
+// UART_G356: receives the G356 module's uplink telemetry stream.
+// G356 TXD -> this UART's RX (PB7); G356 RXD -> this UART's TX (PB6, only
+// needed if you also want to send downlink commands to G356 from this demo).
+UART2.$name                            = "UART_G356";
+UART2.targetBaudRate                   = 115200;
+UART2.peripheral.$assign               = "UART1";
+UART2.peripheral.rxPin.$assign         = "PB7";
+UART2.peripheral.txPin.$assign         = "PB6";
+UART2.txPinConfig.direction            = scripting.forceWrite("OUTPUT");
+UART2.txPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART2.txPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART2.txPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART2.txPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric2";
+UART2.rxPinConfig.hideOutputInversion  = scripting.forceWrite(false);
+UART2.rxPinConfig.onlyInternalResistor = scripting.forceWrite(false);
+UART2.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
+UART2.rxPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric3";
+
+const ProjectConfig              = scripting.addModule("/ti/project_config/ProjectConfig", {}, false);
+ProjectConfig.migrationCondition = true;
+
+/**
+ * Pinmux solution for unlocked pins/peripherals. This ensures that minor changes to the automatic solver in a future
+ * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
+ * re-solve from scratch.
+ */
+Board.peripheral.$suggestSolution  = "DEBUGSS";
+Board.peripheral.swclkPin.$suggestSolution = "PA20";
+Board.peripheral.swdioPin.$suggestSolution = "PA19";
+SYSCTL.peripheral.$suggestSolution = "SYSCTL";
