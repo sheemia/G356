@@ -1,0 +1,2 @@
+g356_driver.o: ..\g356_driver.c ..\g356_driver.h
+..\g356_driver.h:
