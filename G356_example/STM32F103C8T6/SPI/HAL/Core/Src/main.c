@@ -183,7 +183,8 @@ int main(void)
   G356_UART_PrintString("=========================================\r\n");
   G356_UART_PrintString("Starting data reading...\r\n");
 
-  uint8_t rx_raw_buf[G356_FRAME_SIZE]; // 原始接收缓冲区
+  uint8_t rx_raw_buf[G356_MAX_FRAME_SIZE]; // 原始接收缓冲区
+  uint16_t rx_frame_size = 0;
   G356_Data_t g356_data;               // 解析后的姿态数据结构体
   uint32_t success_count = 0;          // 成功包计数
   uint32_t fail_count = 0;             // 失败包计数
@@ -199,10 +200,10 @@ int main(void)
     /* USER CODE BEGIN 3 */
     HAL_Delay(10); // 实现约 100Hz 的轮询读取速率
 
-    // 尝试从 SPI 读取一个 56 字节数据包 (带 2 次立即重试，消除主从机异步复位碰撞)
+    // 根据帧头长度读取当前固件配置的 48/56/72 字节遥测帧。
     bool read_ok = false;
     for (int retry = 0; retry < 3; retry++) {
-        if (G356_ReadPacket(rx_raw_buf)) {
+        if (G356_ReadFrame(rx_raw_buf, &rx_frame_size)) {
             read_ok = true;
             break;
         }

@@ -42,65 +42,70 @@ static inline float parse_float(const uint8_t *buf)
     return val;
 }
 
-bool G356_ReadPacket(uint8_t *frame_buf)
+static bool G356_ReadPacketSized(uint8_t *frame_buf, uint8_t expected_size,
+                                 uint8_t *actual_size)
 {
-    // 每次读取包前，先清空 Master SPI 的接收 FIFO，防止残留垃圾数据造成字节错位
+    uint8_t frame_size = expected_size;
+    uint8_t checksum = 0;
+    int i;
+
     while (!DL_SPI_isRXFIFOEmpty(SPI_G356_INST)) {
-        DL_SPI_receiveData8(SPI_G356_INST);
+        (void)DL_SPI_receiveData8(SPI_G356_INST);
     }
-
-    // 1. 拉低片选信号 (CS Pin)，开始 SPI 事务
-    // GPIO_CS_PORT 和 GPIO_CS_CS_PIN_PIN 在 ti_msp_dl_config.h 中由 SysConfig 自动生成
     DL_GPIO_clearPins(GPIO_CS_PORT, GPIO_CS_CS_PIN_PIN);
+    delay_cycles(3200); /* Allow the G356 CS interrupt to load its TX FIFO. */
 
-    // 2. 延迟 5µs (32MHz 下约 160 个时钟周期)，给从机充裕的时间检测 CS 拉低并准备移位寄存器
-    delay_cycles(160);
-
-    // 3. 突发读取 56 字节
-    // SPI 是全双工通信，主机读取数据必须发送等量的 dummy 字节 (通常发 0xFF)
-    for (int i = 0; i < G356_FRAME_SIZE; i++) {
-        frame_buf[i] = SPI_ReadWriteByte(0xFF);
+    if (expected_size == 0u) {
+        for (i = 0; i < 4; i++) frame_buf[i] = SPI_ReadWriteByte(0xFF);
+        if (frame_buf[0] == 0xAA && frame_buf[1] == 0x55) {
+            frame_size = (uint8_t)(frame_buf[3] + 2u);
+        }
+        if (frame_size < 6u || frame_size > G356_MAX_FRAME_SIZE) {
+            /* Drain a complete transfer after a bad header to resynchronize. */
+            for (i = 4; i < G356_MAX_FRAME_SIZE; i++) (void)SPI_ReadWriteByte(0xFF);
+            DL_GPIO_setPins(GPIO_CS_PORT, GPIO_CS_CS_PIN_PIN);
+            return false;
+        }
+        for (i = 4; i < frame_size; i++) frame_buf[i] = SPI_ReadWriteByte(0xFF);
+    } else {
+        for (i = 0; i < frame_size; i++) frame_buf[i] = SPI_ReadWriteByte(0xFF);
     }
-
-    // 4. 延迟 5µs，确保最后一个字节的所有 SCLK 时钟沿及从机移位完全就绪后，再释放片选
     delay_cycles(160);
-
-    // 拉高片选信号 (CS Pin)，结束 SPI 事务
     DL_GPIO_setPins(GPIO_CS_PORT, GPIO_CS_CS_PIN_PIN);
 
-    // 5. 校验数据帧头 (Header)
-    if (frame_buf[0] != 0xAA || frame_buf[1] != 0x55) {
-        return false; // 帧头不正确，数据包丢弃
-    }
-
-    // 6. 校验数据帧尾 (Tail)
-    if (frame_buf[G356_FRAME_SIZE - 1] != 0x5A) {
-        return false; // 帧尾不正确，数据包丢弃
-    }
-
-    // 7. 校验数据类型 (Type) 与 载荷长度 (Length)
-    // Type 固定为 0x02 表示姿态遥测数据，Length 固定为 0x36 (54字节，表示后续除了帧头帧尾的所有长度)
-    if (frame_buf[2] != 0x02 || frame_buf[3] != 0x36) {
+    if (frame_buf[0] != 0xAA || frame_buf[1] != 0x55 ||
+        frame_buf[frame_size - 1u] != 0x5A ||
+        !((frame_size == G356_COMMON_FRAME_SIZE && frame_buf[2] == 0x04 && frame_buf[3] == 0x2E) ||
+          (frame_size == G356_LEGACY_FRAME_SIZE && frame_buf[2] == 0x02 && frame_buf[3] == 0x36) ||
+          (frame_size == G356_QUATERNION_FRAME_SIZE && frame_buf[2] == 0x03 && frame_buf[3] == 0x46))) {
         return false;
     }
+    for (i = 2; i < frame_size - 2; i++) checksum += frame_buf[i];
+    if (checksum != frame_buf[frame_size - 2u]) return false;
+    if (actual_size != NULL) *actual_size = frame_size;
+    return true;
+}
 
-    // 8. 计算和校验 (Checksum)
-    // 校验规则：从字节偏移 2 (Type) 累加到字节偏移 53 (Raw Gyro Z 最后一字节) 的所有字节之和
-    uint8_t cal_checksum = 0;
-    for (int i = 2; i <= G356_FRAME_SIZE - 3; i++) {
-        cal_checksum += frame_buf[i];
-    }
+bool G356_ReadPacket(uint8_t *frame_buf)
+{
+    return G356_ReadPacketSized(frame_buf, G356_LEGACY_FRAME_SIZE, NULL);
+}
 
-    // 比较计算出的校验和与接收到的校验和 (字节偏移 30)
-    if (cal_checksum != frame_buf[G356_FRAME_SIZE - 2]) {
-        return false; // 校验和不匹配，数据已损坏
-    }
+bool G356_ReadQuaternionPacket(uint8_t *frame_buf)
+{
+    return G356_ReadPacketSized(frame_buf, G356_QUATERNION_FRAME_SIZE, NULL);
+}
 
-    return true; // 校验通过，数据包有效
+bool G356_ReadFrame(uint8_t *frame_buf, uint8_t *frame_size)
+{
+    return frame_size != NULL && G356_ReadPacketSized(frame_buf, 0u, frame_size);
 }
 
 void G356_ParseData(const uint8_t *buf, G356_Data_t *data)
 {
+    const bool common = (buf[2] == 0x04);
+    const bool legacy = (buf[2] == 0x02);
+    memset(data, 0, sizeof(*data));
     // 1. 解析加速度计原始数据，乘以分度值的倒数转换为 g (编译期常量折叠，无运行时除法开销)
     data->accel_x = (float)parse_int16(&buf[4])  * (1.0f / G356_ACCEL_LSB_PER_G);
     data->accel_y = (float)parse_int16(&buf[6])  * (1.0f / G356_ACCEL_LSB_PER_G);
@@ -113,18 +118,34 @@ void G356_ParseData(const uint8_t *buf, G356_Data_t *data)
 
     // 3. 解析欧拉角 (Roll, Pitch, Yaw)
     // 原数据即为小端序标准 32 位浮点数 (deg)
-    data->roll  = parse_float(&buf[16]);
-    data->pitch = parse_float(&buf[20]);
+    // 旧帧保留历史 Pitch/Roll 顺序；扩展帧使用实际 Roll/Pitch 顺序。
+    data->roll  = parse_float(&buf[legacy ? 20 : 16]);
+    data->pitch = parse_float(&buf[legacy ? 16 : 20]);
     data->yaw   = parse_float(&buf[24]);
 
     // 4. 解析温度数据，转换为 ℃
     data->temp = (float)parse_int16(&buf[28]) * (1.0f / G356_TEMP_LSB_PER_DEGC);
 
     // 5. 解析未量化、未扣校准offset的原始浮点六轴数据 (标定/温度补偿数据采集用)
-    data->raw_accel_x = parse_float(&buf[30]);
-    data->raw_accel_y = parse_float(&buf[34]);
-    data->raw_accel_z = parse_float(&buf[38]);
-    data->raw_gyro_x  = parse_float(&buf[42]);
-    data->raw_gyro_y  = parse_float(&buf[46]);
-    data->raw_gyro_z  = parse_float(&buf[50]);
+    if (!common) {
+        data->raw_accel_x = parse_float(&buf[30]);
+        data->raw_accel_y = parse_float(&buf[34]);
+        data->raw_accel_z = parse_float(&buf[38]);
+        data->raw_gyro_x  = parse_float(&buf[42]);
+        data->raw_gyro_y  = parse_float(&buf[46]);
+        data->raw_gyro_z  = parse_float(&buf[50]);
+    }
+    data->has_quaternion = common || (buf[2] == 0x03 && buf[3] == 0x46);
+    if (data->has_quaternion) {
+        const uint16_t offset = common ? 30u : 54u;
+        data->quat_w = parse_float(&buf[offset]);
+        data->quat_x = parse_float(&buf[offset + 4u]);
+        data->quat_y = parse_float(&buf[offset + 8u]);
+        data->quat_z = parse_float(&buf[offset + 12u]);
+    } else {
+        data->quat_w = 1.0f;
+        data->quat_x = 0.0f;
+        data->quat_y = 0.0f;
+        data->quat_z = 0.0f;
+    }
 }

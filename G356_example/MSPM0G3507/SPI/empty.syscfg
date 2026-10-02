@@ -28,7 +28,9 @@ GPIO1.associatedPins[0].initialValue = "SET";
 
 const Board = scripting.addModule("/ti/driverlib/Board", {}, false);
 
-// Configure SPI1 as Master (Controller) at 2MHz, Mode 0 (CPOL=0, CPHA=0)
+// SPI controller with software-controlled CS: PA27 remains low throughout
+// each complete 56-byte transfer. MOTO3 provides SCLK/PICO/POCI without a
+// hardware-controlled chip-select signal.
 SPI1.$name                              = "SPI_G356";
 SPI1.mode                               = "CONTROLLER";
 SPI1.targetBitRate                      = 2000000;

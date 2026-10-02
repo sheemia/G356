@@ -83,7 +83,7 @@ SPI 读取遥测：
 int G356_PortSpiReadFrame(uint8_t *rx, uint16_t len);
 ```
 
-这个函数内部要完成一次完整 SPI 事务：CS 拉低，连续读取 `len=56` 字节，CS 拉高。不要把同一帧拆成多次 CS 读取；模块会把每次 CS 低电平期间的输出视为一帧快照。
+这个函数内部要完成一次完整 SPI 事务：CS 拉低，连续读取 `len` 字节，CS 拉高。默认 `len=48`。选择56/72/22字节预设后，调用 `G356_SetExpectedTelemetryFormat()` 设置期望长度；自定义输出调用 `G356_SetExpectedTelemetryFields()`。不要把同一帧拆成多次 CS 读取；模块会把每次 CS 低电平期间的输出视为一帧快照。
 
 ## 常用命令
 
@@ -92,6 +92,11 @@ G356_SendCommandRepeated(G356_CMD_GYRO_CALIBRATE, 0);
 G356_SendCommandRepeated(G356_CMD_ZERO_YAW, 0);
 G356_SendCommandRepeated(G356_CMD_SET_OUTPUT_CHANNEL, G356_CHANNEL_UART);
 G356_SendCommandRepeated(G356_CMD_SET_ODR_DIVIDER, G356_ODR_100HZ);
+G356_SendCommandRepeated(G356_CMD_SET_TELEMETRY_FORMAT, G356_TELEMETRY_QUATERNION_72);
+G356_SendCommandRepeated(G356_CMD_SET_TELEMETRY_FORMAT, G356_TELEMETRY_COMMON_48);
+G356_SendCommandRepeated(G356_CMD_SET_TELEMETRY_FORMAT, G356_TELEMETRY_QUAT_ONLY_22);
+G356_SendCommandRepeated(G356_CMD_SET_TELEMETRY_FIELDS,
+    G356_FIELD_ACCEL | G356_FIELD_GYRO | G356_FIELD_QUATERNION);
 G356_SendCommandRepeated(G356_CMD_RECOVER_115200, 0);
 ```
 
@@ -106,10 +111,16 @@ G356_SendCommandRepeated(G356_CMD_RECOVER_115200, 0);
 - `roll/pitch/yaw`：单位 `deg`
 - `temp`：单位 `C`
 - `raw_accel_*` / `raw_gyro_*`：未量化、未扣校准 offset 的原始浮点六轴数据
+- `valid_fields`：当前帧实际包含的数据组位图，使用字段前应先检查对应位
+
+SDK 会自动处理兼容56字节帧的历史 Roll/Pitch 槽位，`data.roll` 和 `data.pitch` 始终表示模块物理 Roll/Pitch；默认48字节扩展帧无需额外映射。
+- `has_quaternion`：当前帧是否包含四元数
+- `quat_w/x/y/z`：扩展帧中的单位四元数，顺序 WXYZ
 
 ## 移植建议
 
 - 第一次调试优先选 UART，接线少，也更容易用 PC 串口工具排查。
 - 真实控制项目中，UART 推荐中断或 DMA 接收，不推荐低频主循环直接轮询硬件 FIFO。
-- SPI 模式必须一次 CS 周期内连续读满 56 字节，读完后再释放 CS。不要分段读取同一帧。
+- SPI 模式必须一次 CS 周期内连续读满当前格式的完整帧，读完后再释放 CS。不要分段读取同一帧。
+- SPI 使用 Mode 0（CPOL=0、CPHA=0）、8 位、MSB first；首次联调请从 2MHz 或更低时钟开始。
 - 客户工程里只保留一份 `G356_SDK` 核心代码，不要从多个平台示例里混拷不同版本的 `g356_driver.c/.h`。

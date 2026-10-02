@@ -77,7 +77,7 @@ int G356_PortSpiReadFrame(uint8_t *rx, uint16_t len)
      *       rx[i] = spi_transfer(G356_SPI_DUMMY_BYTE);
      *   pull CS high;
      *
-     * Do not split one 56-byte telemetry frame into multiple CS pulses.
+     * Do not split one 56/72-byte telemetry frame into multiple CS pulses.
      *   return 0;
      */
     return -1;

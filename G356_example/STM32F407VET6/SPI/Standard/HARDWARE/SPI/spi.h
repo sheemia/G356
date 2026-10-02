@@ -6,5 +6,6 @@
 
 void SPI1_G356_Init(void);
 uint8_t SPI1_G356_ReadPacket(uint8_t *buf, uint16_t len);
+uint8_t SPI1_G356_ReadFrame(uint8_t *buf, uint16_t *len);
 
 #endif

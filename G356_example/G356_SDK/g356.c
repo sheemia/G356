@@ -23,11 +23,60 @@ void G356_Init(G356_Handle_t *dev)
     }
 
     memset(dev, 0, sizeof(*dev));
+    dev->expected_frame_size = G356_COMMON_FRAME_SIZE;
+}
+
+void G356_SetExpectedTelemetryFormat(G356_Handle_t *dev, G356_TelemetryFormat_t format)
+{
+    if (dev == 0) return;
+    switch (format) {
+        case G356_TELEMETRY_QUATERNION_72: dev->expected_frame_size = G356_QUATERNION_FRAME_SIZE; break;
+        case G356_TELEMETRY_COMMON_48: dev->expected_frame_size = G356_COMMON_FRAME_SIZE; break;
+        case G356_TELEMETRY_QUAT_ONLY_22: dev->expected_frame_size = G356_QUAT_ONLY_FRAME_SIZE; break;
+        default: dev->expected_frame_size = G356_LEGACY_FRAME_SIZE; break;
+    }
+}
+
+void G356_SetExpectedTelemetryFields(G356_Handle_t *dev, uint8_t field_mask)
+{
+    uint8_t i;
+    uint8_t size = 6u;
+    static const uint8_t field_sizes[7] = {6u, 6u, 12u, 2u, 12u, 12u, 16u};
+    if (dev == 0 || (field_mask & G356_FIELD_ALL) == 0u) return;
+    field_mask &= G356_FIELD_ALL;
+    for (i = 0; i < 7u; i++) {
+        if ((field_mask & (1u << i)) != 0u) size = (uint8_t)(size + field_sizes[i]);
+    }
+    dev->expected_frame_size = size;
+}
+
+uint8_t G356_GetFieldMask(uint8_t type, uint8_t length)
+{
+    if (type == G356_FRAME_TYPE_TELEMETRY && length == G356_FRAME_LENGTH) return 0x3Fu;
+    if (type == G356_FRAME_TYPE_QUATERNION && length == G356_QUATERNION_FRAME_LENGTH) return 0x7Fu;
+    if (type == G356_FRAME_TYPE_COMMON && length == G356_COMMON_FRAME_LENGTH) return 0x4Fu;
+    if (type == G356_FRAME_TYPE_QUAT_ONLY && length == G356_QUAT_ONLY_FRAME_LENGTH) return 0x40u;
+    if ((type & 0x80u) != 0u) return type & G356_FIELD_ALL;
+    return 0u;
+}
+
+uint8_t G356_GetFrameSize(uint8_t type, uint8_t length)
+{
+    uint8_t i;
+    uint8_t size = 6u;
+    uint8_t mask = G356_GetFieldMask(type, length);
+    static const uint8_t field_sizes[7] = {6u, 6u, 12u, 2u, 12u, 12u, 16u};
+    if (mask == 0u) return 0u;
+    for (i = 0; i < 7u; i++) {
+        if ((mask & (1u << i)) != 0u) size = (uint8_t)(size + field_sizes[i]);
+    }
+    return (length == (uint8_t)(size - 2u)) ? size : 0u;
 }
 
 bool G356_ValidateFrame(const uint8_t *frame)
 {
     uint8_t checksum = 0;
+    uint8_t frame_size;
     uint16_t i;
 
     if (frame == 0) {
@@ -36,45 +85,73 @@ bool G356_ValidateFrame(const uint8_t *frame)
     if (frame[0] != G356_FRAME_HEADER0 || frame[1] != G356_FRAME_HEADER1) {
         return false;
     }
-    if (frame[2] != G356_FRAME_TYPE_TELEMETRY || frame[3] != G356_FRAME_LENGTH) {
-        return false;
-    }
-    if (frame[G356_FRAME_SIZE - 1u] != G356_FRAME_TAIL) {
+    frame_size = G356_GetFrameSize(frame[2], frame[3]);
+    if (frame_size == 0u) return false;
+    if (frame[frame_size - 1u] != G356_FRAME_TAIL) {
         return false;
     }
 
-    for (i = 2u; i <= (G356_FRAME_SIZE - 3u); i++) {
+    for (i = 2u; i <= (frame_size - 3u); i++) {
         checksum = (uint8_t)(checksum + frame[i]);
     }
 
-    return checksum == frame[G356_FRAME_SIZE - 2u];
+    return checksum == frame[frame_size - 2u];
 }
 
 void G356_ParseFrame(const uint8_t *frame, G356_Data_t *data)
 {
+    uint8_t mask;
+    uint8_t offset = 4u;
     if (frame == 0 || data == 0) {
         return;
     }
 
-    data->accel_x = (float)g356_parse_i16(&frame[4]) * (1.0f / G356_ACCEL_LSB_PER_G);
-    data->accel_y = (float)g356_parse_i16(&frame[6]) * (1.0f / G356_ACCEL_LSB_PER_G);
-    data->accel_z = (float)g356_parse_i16(&frame[8]) * (1.0f / G356_ACCEL_LSB_PER_G);
-
-    data->gyro_x = (float)g356_parse_i16(&frame[10]) * (1.0f / G356_GYRO_LSB_PER_DPS);
-    data->gyro_y = (float)g356_parse_i16(&frame[12]) * (1.0f / G356_GYRO_LSB_PER_DPS);
-    data->gyro_z = (float)g356_parse_i16(&frame[14]) * (1.0f / G356_GYRO_LSB_PER_DPS);
-
-    data->roll = g356_parse_float(&frame[16]);
-    data->pitch = g356_parse_float(&frame[20]);
-    data->yaw = g356_parse_float(&frame[24]);
-    data->temp = (float)g356_parse_i16(&frame[28]) * (1.0f / G356_TEMP_LSB_PER_DEGC);
-
-    data->raw_accel_x = g356_parse_float(&frame[30]);
-    data->raw_accel_y = g356_parse_float(&frame[34]);
-    data->raw_accel_z = g356_parse_float(&frame[38]);
-    data->raw_gyro_x = g356_parse_float(&frame[42]);
-    data->raw_gyro_y = g356_parse_float(&frame[46]);
-    data->raw_gyro_z = g356_parse_float(&frame[50]);
+    mask = G356_GetFieldMask(frame[2], frame[3]);
+    memset(data, 0, sizeof(*data));
+    data->valid_fields = mask;
+    if ((mask & G356_FIELD_ACCEL) != 0u) {
+        data->accel_x = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_ACCEL_LSB_PER_G); offset += 2u;
+        data->accel_y = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_ACCEL_LSB_PER_G); offset += 2u;
+        data->accel_z = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_ACCEL_LSB_PER_G); offset += 2u;
+    }
+    if ((mask & G356_FIELD_GYRO) != 0u) {
+        data->gyro_x = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_GYRO_LSB_PER_DPS); offset += 2u;
+        data->gyro_y = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_GYRO_LSB_PER_DPS); offset += 2u;
+        data->gyro_z = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_GYRO_LSB_PER_DPS); offset += 2u;
+    }
+    if ((mask & G356_FIELD_EULER) != 0u) {
+        float first_angle = g356_parse_float(&frame[offset]); offset += 4u;
+        float second_angle = g356_parse_float(&frame[offset]); offset += 4u;
+        if (frame[2] == G356_FRAME_TYPE_TELEMETRY) {
+            /* Remap the byte-compatible historical slots to physical axes. */
+            data->roll = second_angle;
+            data->pitch = first_angle;
+        } else {
+            data->roll = first_angle;
+            data->pitch = second_angle;
+        }
+        data->yaw = g356_parse_float(&frame[offset]); offset += 4u;
+    }
+    if ((mask & G356_FIELD_TEMP) != 0u) {
+        data->temp = (float)g356_parse_i16(&frame[offset]) * (1.0f / G356_TEMP_LSB_PER_DEGC); offset += 2u;
+    }
+    if ((mask & G356_FIELD_RAW_ACCEL) != 0u) {
+        data->raw_accel_x = g356_parse_float(&frame[offset]); offset += 4u;
+        data->raw_accel_y = g356_parse_float(&frame[offset]); offset += 4u;
+        data->raw_accel_z = g356_parse_float(&frame[offset]); offset += 4u;
+    }
+    if ((mask & G356_FIELD_RAW_GYRO) != 0u) {
+        data->raw_gyro_x = g356_parse_float(&frame[offset]); offset += 4u;
+        data->raw_gyro_y = g356_parse_float(&frame[offset]); offset += 4u;
+        data->raw_gyro_z = g356_parse_float(&frame[offset]); offset += 4u;
+    }
+    data->has_quaternion = (mask & G356_FIELD_QUATERNION) != 0u;
+    if (data->has_quaternion) {
+        data->quat_w = g356_parse_float(&frame[offset]); offset += 4u;
+        data->quat_x = g356_parse_float(&frame[offset]); offset += 4u;
+        data->quat_y = g356_parse_float(&frame[offset]); offset += 4u;
+        data->quat_z = g356_parse_float(&frame[offset]);
+    }
 }
 
 G356_Result_t G356_FeedByte(G356_Handle_t *dev, uint8_t byte)
@@ -105,12 +182,21 @@ G356_Result_t G356_FeedByte(G356_Handle_t *dev, uint8_t byte)
 
         case 2:
             dev->parser_buf[dev->parser_index++] = byte;
-            if (dev->parser_index >= G356_FRAME_SIZE) {
+            if (dev->parser_index == 4u) {
+                dev->expected_frame_size = G356_GetFrameSize(dev->parser_buf[2], dev->parser_buf[3]);
+                if (dev->expected_frame_size == 0u) {
+                    dev->parser_state = 0;
+                    dev->parser_index = 0;
+                    dev->invalid_count++;
+                    return G356_RESULT_BAD_FRAME;
+                }
+            }
+            if (dev->parser_index >= dev->expected_frame_size) {
                 dev->parser_state = 0;
                 dev->parser_index = 0;
 
                 if (G356_ValidateFrame(dev->parser_buf)) {
-                    memcpy(dev->frame, dev->parser_buf, G356_FRAME_SIZE);
+                    memcpy(dev->frame, dev->parser_buf, dev->expected_frame_size);
                     G356_ParseFrame(dev->frame, &dev->data);
                     dev->valid_count++;
                     return G356_RESULT_OK;
@@ -158,7 +244,7 @@ G356_Result_t G356_Update(G356_Handle_t *dev)
     if (dev == 0) {
         return G356_RESULT_PORT_ERROR;
     }
-    if (G356_PortSpiReadFrame(dev->frame, G356_FRAME_SIZE) < 0) {
+    if (G356_PortSpiReadFrame(dev->frame, dev->expected_frame_size) < 0) {
         return G356_RESULT_PORT_ERROR;
     }
     if (G356_ValidateFrame(dev->frame)) {

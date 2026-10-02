@@ -17,7 +17,7 @@
         DL_UART_INTERRUPT_OVERRUN_ERROR | DL_UART_INTERRUPT_BREAK_ERROR |    \
         DL_UART_INTERRUPT_PARITY_ERROR | DL_UART_INTERRUPT_FRAMING_ERROR)
 
-static uint8_t g356_rx_frame_buf[G356_FRAME_SIZE];
+static uint8_t g356_rx_frame_buf[G356_MAX_FRAME_SIZE];
 static volatile G356_Data_t g356_latest_data;
 static volatile uint32_t g356_valid_count;
 static volatile uint32_t g356_invalid_count;

@@ -1,4 +1,6 @@
-﻿# G356 AHRS 陀螺仪模块 UART 接收示例工程 (STM32F407VET6, StdPeriph)
+# G356 AHRS 陀螺仪模块 UART 接收示例工程 (STM32F407VET6, StdPeriph)
+
+> 当前固件出厂和恢复出厂默认输出 48 字节常用扩展帧（`AA 55 04 2E`）；下方 56 字节布局仅描述可选的历史兼容帧。SPI 示例优先使用 `G356_ReadFrame()`，UART 解析器根据 Type/Length 自动确定帧长。完整格式参见根目录 `communication_protocol.md`。
 
 ## 技术支持与购买
 
@@ -11,7 +13,7 @@
 
 G356 是 JYTech 自主研发的六轴 AHRS 陀螺仪模块，内部集成三轴陀螺仪、三轴加速度计和姿态解算固件，可输出加速度、角速度、姿态角、温度以及原始惯性数据。本示例工程用于演示如何在不同 MCU 平台上通过 SPI 或 UART 接收并解析 G356 遥测数据，便于用户快速评估模块并将驱动代码移植到自己的产品中。
 
-本工程使用 STM32F4xx Standard Peripheral Library，在 STM32F407VET6 上通过 USART2 接收 G356 模块主动输出的 56 字节遥测帧，并通过 USART1 打印解析结果。
+本工程使用 STM32F4xx Standard Peripheral Library，在 STM32F407VET6 上通过 USART2 接收 G356 模块主动输出的默认 48 字节常用扩展帧，并通过 USART1 打印解析结果。
 
 ## 引脚连接
 
@@ -26,7 +28,7 @@ G356 是 JYTech 自主研发的六轴 AHRS 陀螺仪模块，内部集成三轴�
 
 G356 UART 出厂默认 115200, 8N1；如果你已通过上位机修改波特率，请同步调整 `USART2_G356_Init()` 的参数。
 
-## 56 字节遥测帧
+## 56 字节兼容帧
 
 | 偏移 | 字段 | 类型 | 说明 |
 | --- | --- | --- | --- |

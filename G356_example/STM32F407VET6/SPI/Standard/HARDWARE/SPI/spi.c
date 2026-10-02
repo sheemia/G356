@@ -1,5 +1,6 @@
 #include "spi.h"
 #include "delay.h"
+#include "g356_driver.h"
 
 #define G356_CS_LOW()     GPIO_ResetBits(GPIOA, GPIO_Pin_4)
 #define G356_CS_HIGH()    GPIO_SetBits(GPIOA, GPIO_Pin_4)
@@ -23,6 +24,18 @@ static uint8_t SPI1_ReadWriteByte(uint8_t tx)
     }
 
     return (uint8_t)SPI_I2S_ReceiveData(SPI1);
+}
+
+static uint8_t SPI1_WaitNotBusy(void)
+{
+    uint32_t timeout = 0x10000;
+
+    while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) != RESET) {
+        if (--timeout == 0) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 void SPI1_G356_Init(void)
@@ -60,7 +73,8 @@ void SPI1_G356_Init(void)
     spi.SPI_CPOL = SPI_CPOL_Low;
     spi.SPI_CPHA = SPI_CPHA_1Edge;
     spi.SPI_NSS = SPI_NSS_Soft;
-    spi.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_32; /* 84MHz / 32 = 2.625MHz */
+    /* APB2 = 84MHz. /64 = 1.3125MHz, safely within the 2MHz reference limit. */
+    spi.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_64;
     spi.SPI_FirstBit = SPI_FirstBit_MSB;
     spi.SPI_CRCPolynomial = 7;
     SPI_Init(SPI1, &spi);
@@ -76,11 +90,59 @@ uint8_t SPI1_G356_ReadPacket(uint8_t *buf, uint16_t len)
     }
 
     G356_CS_LOW();
-    delay_us(2);
+    delay_us(100);
     for (i = 0; i < len; i++) {
         buf[i] = SPI1_ReadWriteByte(0xFF);
     }
+
+    /* RXNE only confirms that the receive register contains the last byte.
+     * Keep CS asserted until the peripheral has shifted the final clock out. */
+    if (!SPI1_WaitNotBusy()) {
+        G356_CS_HIGH();
+        return 0;
+    }
     G356_CS_HIGH();
 
+    return 1;
+}
+
+uint8_t SPI1_G356_ReadFrame(uint8_t *buf, uint16_t *len)
+{
+    uint16_t i;
+    uint16_t frame_size;
+
+    if (buf == 0 || len == 0) {
+        return 0;
+    }
+
+    G356_CS_LOW();
+    delay_us(100);
+    for (i = 0; i < 4u; ++i) {
+        buf[i] = SPI1_ReadWriteByte(0xFF);
+    }
+
+    frame_size = (uint16_t)buf[3] + 2u;
+    if (buf[0] != 0xAA || buf[1] != 0x55 ||
+        !((frame_size == G356_COMMON_FRAME_SIZE && buf[2] == 0x04) ||
+          (frame_size == G356_LEGACY_FRAME_SIZE && buf[2] == 0x02) ||
+          (frame_size == G356_QUATERNION_FRAME_SIZE && buf[2] == 0x03))) {
+        /* Keep CS low through the largest supported frame before retrying. */
+        for (i = 4u; i < G356_MAX_FRAME_SIZE; ++i) {
+            (void)SPI1_ReadWriteByte(0xFF);
+        }
+        (void)SPI1_WaitNotBusy();
+        G356_CS_HIGH();
+        return 0;
+    }
+
+    for (i = 4u; i < frame_size; ++i) {
+        buf[i] = SPI1_ReadWriteByte(0xFF);
+    }
+    if (!SPI1_WaitNotBusy()) {
+        G356_CS_HIGH();
+        return 0;
+    }
+    G356_CS_HIGH();
+    *len = frame_size;
     return 1;
 }

@@ -25,9 +25,9 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;   /* Mode 0: CPOL=0 */
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;       /* Mode 0: CPHA=0 */
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  /* APB2 = 84MHz @168MHz sysclk -> /32 = 2.625MHz, close to the 2MHz
-   * reference clock used by the MSPM0 host example. */
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  /* APB2 = 84MHz @168MHz sysclk. /64 = 1.3125MHz, safely within the
+   * 2MHz reference-clock limit used by the MSPM0 host example. */
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;

@@ -15,11 +15,29 @@ import sys
 import time
 from dataclasses import dataclass
 
-FRAME_SIZE = 56
+LEGACY_FRAME_SIZE = 56
+COMMON_FRAME_SIZE = 48
+QUATERNION_FRAME_SIZE = 72
+QUAT_ONLY_FRAME_SIZE = 22
 HEADER = b"\xAA\x55"
 TAIL = 0x5A
 TYPE_TELEMETRY = 0x02
 LENGTH_TELEMETRY = 0x36
+TYPE_QUATERNION = 0x03
+LENGTH_QUATERNION = 0x46
+TYPE_COMMON = 0x04
+LENGTH_COMMON = 0x2E
+TYPE_QUAT_ONLY = 0x05
+LENGTH_QUAT_ONLY = 0x14
+
+FIELD_ACCEL = 0x01
+FIELD_GYRO = 0x02
+FIELD_EULER = 0x04
+FIELD_TEMP = 0x08
+FIELD_RAW_ACCEL = 0x10
+FIELD_RAW_GYRO = 0x20
+FIELD_QUATERNION = 0x40
+FIELD_SIZES = (6, 6, 12, 2, 12, 12, 16)
 
 ACCEL_LSB_PER_G = 2048.0
 GYRO_LSB_PER_DPS = 8.2
@@ -28,28 +46,33 @@ TEMP_LSB_PER_DEGC = 100.0
 
 @dataclass
 class G356Data:
-    accel_x: float
-    accel_y: float
-    accel_z: float
-    gyro_x: float
-    gyro_y: float
-    gyro_z: float
-    roll: float
-    pitch: float
-    yaw: float
-    temp: float
-    raw_accel_x: float
-    raw_accel_y: float
-    raw_accel_z: float
-    raw_gyro_x: float
-    raw_gyro_y: float
-    raw_gyro_z: float
+    valid_fields: int
+    accel: tuple[float, float, float] | None
+    gyro: tuple[float, float, float] | None
+    euler: tuple[float, float, float] | None
+    temp: float | None
+    raw_accel: tuple[float, float, float] | None
+    raw_gyro: tuple[float, float, float] | None
+    quaternion: tuple[float, float, float, float] | None
+
+
+def field_mask_and_size(data_type: int, length: int) -> tuple[int, int]:
+    fixed_masks = {
+        (TYPE_TELEMETRY, LENGTH_TELEMETRY): 0x3F,
+        (TYPE_QUATERNION, LENGTH_QUATERNION): 0x7F,
+        (TYPE_COMMON, LENGTH_COMMON): 0x4F,
+        (TYPE_QUAT_ONLY, LENGTH_QUAT_ONLY): 0x40,
+    }
+    mask = fixed_masks.get((data_type, length), data_type & 0x7F if data_type & 0x80 else 0)
+    size = 6 + sum(size for bit, size in enumerate(FIELD_SIZES) if mask & (1 << bit))
+    return (mask, size) if mask and length == size - 2 else (0, 0)
 
 
 class G356FrameParser:
     def __init__(self) -> None:
         self._state = 0
         self._buf = bytearray()
+        self._expected_size = LEGACY_FRAME_SIZE
 
     def feed(self, byte: int) -> bytes | None:
         if self._state == 0:
@@ -70,7 +93,13 @@ class G356FrameParser:
             return None
 
         self._buf.append(byte)
-        if len(self._buf) < FRAME_SIZE:
+        if len(self._buf) == 4:
+            _, self._expected_size = field_mask_and_size(self._buf[2], self._buf[3])
+            if not self._expected_size:
+                self._buf.clear()
+                self._state = 0
+                return b""
+        if len(self._buf) < self._expected_size:
             return None
 
         frame = bytes(self._buf)
@@ -80,41 +109,54 @@ class G356FrameParser:
 
 
 def validate_frame(frame: bytes) -> bool:
-    if len(frame) != FRAME_SIZE:
+    if len(frame) < 6:
+        return False
+    _, expected_size = field_mask_and_size(frame[2], frame[3])
+    if not expected_size or len(frame) != expected_size:
         return False
     if frame[0:2] != HEADER:
         return False
-    if frame[2] != TYPE_TELEMETRY or frame[3] != LENGTH_TELEMETRY:
-        return False
     if frame[-1] != TAIL:
         return False
-    checksum = sum(frame[2:54]) & 0xFF
-    return checksum == frame[54]
+    checksum = sum(frame[2:-2]) & 0xFF
+    return checksum == frame[-2]
 
 
 def parse_frame(frame: bytes) -> G356Data:
-    ax, ay, az, gx, gy, gz = struct.unpack_from("<hhhhhh", frame, 4)
-    roll, pitch, yaw = struct.unpack_from("<fff", frame, 16)
-    (temp_raw,) = struct.unpack_from("<h", frame, 28)
-    raw_values = struct.unpack_from("<ffffff", frame, 30)
+    mask, _ = field_mask_and_size(frame[2], frame[3])
+    offset = 4
+    accel = gyro = euler = raw_accel = raw_gyro = quaternion = None
+    temp = None
+    if mask & FIELD_ACCEL:
+        values = struct.unpack_from("<hhh", frame, offset); offset += 6
+        accel = tuple(value / ACCEL_LSB_PER_G for value in values)
+    if mask & FIELD_GYRO:
+        values = struct.unpack_from("<hhh", frame, offset); offset += 6
+        gyro = tuple(value / GYRO_LSB_PER_DPS for value in values)
+    if mask & FIELD_EULER:
+        first_angle, second_angle, yaw = struct.unpack_from("<fff", frame, offset); offset += 12
+        if frame[2] == TYPE_TELEMETRY:
+            euler = (second_angle, first_angle, yaw)
+        else:
+            euler = (first_angle, second_angle, yaw)
+    if mask & FIELD_TEMP:
+        temp = struct.unpack_from("<h", frame, offset)[0] / TEMP_LSB_PER_DEGC; offset += 2
+    if mask & FIELD_RAW_ACCEL:
+        raw_accel = struct.unpack_from("<fff", frame, offset); offset += 12
+    if mask & FIELD_RAW_GYRO:
+        raw_gyro = struct.unpack_from("<fff", frame, offset); offset += 12
+    if mask & FIELD_QUATERNION:
+        quaternion = struct.unpack_from("<ffff", frame, offset)
 
     return G356Data(
-        accel_x=ax / ACCEL_LSB_PER_G,
-        accel_y=ay / ACCEL_LSB_PER_G,
-        accel_z=az / ACCEL_LSB_PER_G,
-        gyro_x=gx / GYRO_LSB_PER_DPS,
-        gyro_y=gy / GYRO_LSB_PER_DPS,
-        gyro_z=gz / GYRO_LSB_PER_DPS,
-        roll=roll,
-        pitch=pitch,
-        yaw=yaw,
-        temp=temp_raw / TEMP_LSB_PER_DEGC,
-        raw_accel_x=raw_values[0],
-        raw_accel_y=raw_values[1],
-        raw_accel_z=raw_values[2],
-        raw_gyro_x=raw_values[3],
-        raw_gyro_y=raw_values[4],
-        raw_gyro_z=raw_values[5],
+        valid_fields=mask,
+        accel=accel,
+        gyro=gyro,
+        euler=euler,
+        temp=temp,
+        raw_accel=raw_accel,
+        raw_gyro=raw_gyro,
+        quaternion=quaternion,
     )
 
 
@@ -168,11 +210,14 @@ def monitor(port: str, baud: int, print_every: int) -> None:
                 data = parse_frame(frame)
                 elapsed = max(time.monotonic() - start_time, 0.001)
                 fps = valid_count / elapsed
+                euler_text = "euler=--" if data.euler is None else "roll={:8.2f} pitch={:8.2f} yaw={:8.2f}".format(*data.euler)
+                accel_text = "acc=--" if data.accel is None else "acc=[{:7.3f},{:7.3f},{:7.3f}]g".format(*data.accel)
+                gyro_text = "gyro=--" if data.gyro is None else "gyro=[{:8.2f},{:8.2f},{:8.2f}]dps".format(*data.gyro)
+                temp_text = "temp=--" if data.temp is None else f"temp={data.temp:5.1f}C"
+                quaternion_text = "q=--" if data.quaternion is None else "q=[{:.5f},{:.5f},{:.5f},{:.5f}]".format(*data.quaternion)
                 print(
-                    f"roll={data.roll:8.2f} pitch={data.pitch:8.2f} yaw={data.yaw:8.2f} "
-                    f"acc=[{data.accel_x:7.3f},{data.accel_y:7.3f},{data.accel_z:7.3f}]g "
-                    f"gyro=[{data.gyro_x:8.2f},{data.gyro_y:8.2f},{data.gyro_z:8.2f}]dps "
-                    f"temp={data.temp:5.1f}C valid={valid_count} invalid={invalid_count} fps={fps:5.1f}"
+                    f"{euler_text} {accel_text} {gyro_text} {temp_text} {quaternion_text} "
+                    f"valid={valid_count} invalid={invalid_count} fps={fps:5.1f}"
                 )
 
 

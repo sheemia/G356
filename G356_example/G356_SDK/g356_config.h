@@ -23,7 +23,8 @@
 /* UART byte-stream parser behavior. */
 #define G356_UART_MAX_BYTES_PER_UPDATE 128
 
-/* SPI read behavior. The port layer should read one complete 56-byte frame. */
+/* SPI port reads one complete frame. The SDK defaults to the factory's
+ * 48-byte common preset; select another length explicitly when needed. */
 #define G356_SPI_DUMMY_BYTE           0xFF
 
 #endif /* G356_CONFIG_H */

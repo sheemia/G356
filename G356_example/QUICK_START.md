@@ -118,7 +118,8 @@ G356 UART 数据是连续输出流。实时控制项目中不要依赖低频主�
 
 - 主控必须做 SPI Controller/Master。
 - G356 是 SPI Peripheral/Slave。
-- 每次 CS 拉低后必须连续读满 `56` 字节，读完再拉高 CS；不要把一帧拆成多次 CS 读取。
+- 使用 Mode 0（CPOL=0、CPHA=0）、8 位、MSB first；时钟从 `2MHz` 或更低开始。F407 示例使用 `1.3125MHz`，MSPM0/F103 示例使用 `2MHz`。
+- 每次 CS 拉低后必须连续读满当前格式的完整帧，读完再拉高 CS；不要把一帧拆成多次 CS 读取。
 - 下行配置命令仍建议走 UART，SPI 示例只负责读取遥测帧。
 
 ## 6. 旧版 g356_driver.c/.h 移植方式
@@ -128,7 +129,7 @@ G356 UART 数据是连续输出流。实时控制项目中不要依赖低频主�
 旧版 UART 移植最小流程：
 
 ```c
-uint8_t frame[G356_FRAME_SIZE];
+uint8_t frame[G356_MAX_FRAME_SIZE];
 G356_Data_t data;
 
 void on_uart_rx_byte(uint8_t byte)
@@ -143,13 +144,16 @@ void on_uart_rx_byte(uint8_t byte)
 旧版 SPI 移植最小流程：
 
 ```c
-uint8_t frame[G356_FRAME_SIZE];
+uint8_t frame[G356_MAX_FRAME_SIZE];
+uint8_t frame_size;
 G356_Data_t data;
 
-if (G356_ReadPacket(frame)) {
+if (G356_ReadFrame(frame, &frame_size)) {
     G356_ParseData(frame, &data);
 }
 ```
+
+各平台示例已支持默认48字节常用扩展帧；SPI 的 `G356_ReadFrame()` 根据 Type/Length 读取48/56/72字节帧，`G356_ReadPacket()` 仍用于固定56字节旧帧。新项目若要使用22字节预设或任意数据组组合，请使用 `G356_SDK/`：UART根据Type/Length自动识别，SPI通过 `G356_SetExpectedTelemetryFormat()` 或 `G356_SetExpectedTelemetryFields()` 设置当前事务长度。四元数位于 `data.quat_w/x/y/z`，`valid_fields` 表示本帧实际包含的数据组。未存储格式标记的旧设备升级后继续输出56字节；恢复出厂回到48字节；`0x19` 或 RX 拉低约3秒仍回到56字节兼容模式。
 
 注意：旧版 `G356_ReadPacket()` 里的 SPI 外设名、CS GPIO 名来自示例工程的 SysConfig/Cube 配置，换到自己的板子时需要改成自己的外设句柄和片选引脚。
 
@@ -165,11 +169,11 @@ if (G356_ReadPacket(frame)) {
 数据偶尔校验失败：
 
 - UART：检查线长、地线、电源纹波、串口波特率，并确认接收端没有 UART FIFO overrun。
-- SPI：检查 CS 是否一次只包住完整 `56` 字节且中途不释放，SCLK 是否先从 `2 MHz` 起步，模式是否为 Mode 0。
+- SPI：检查 CS 是否一次只包住当前格式的完整帧且中途不释放，SCLK 是否从 `2MHz` 或更低开始，模式是否为 Mode 0；MSPM0G3507/G3519 示例必须按 PA27/PA17/PB15/PA16 接线，不使用 PA18。
 
 姿态角看起来不动：
 
-- 确认你解析的是 `0xAA 0x55` 的 G356 56 字节帧，不要误用 G357 的 16 字节帧格式。
+- 确认你解析的是 `0xAA 0x55` 的 G356 帧，默认48字节帧的 Type/Length 为 `04/2E`，不要误用 G357 的16字节格式。
 - 确认上位机或代码没有只打印整数部分。
 
 编译不过：

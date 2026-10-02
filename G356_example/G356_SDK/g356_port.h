@@ -44,7 +44,7 @@ void G356_PortDelayMs(uint32_t ms);
  *   2. Clock out exactly len bytes continuously, usually by sending dummy 0xFF.
  *   3. Pull CS high.
  *
- * Keep CS low for the whole 56-byte frame. Do not split one frame into
+ * Keep CS low for the whole requested 56/72-byte frame. Do not split one frame into
  * several SPI transactions; each CS-low transaction is treated as one snapshot.
  *
  * Return:

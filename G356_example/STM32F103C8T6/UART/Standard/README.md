@@ -1,4 +1,6 @@
-﻿# G356 AHRS 陀螺仪模块 UART 通信接收示例工程 (STM32F103C8T6, StdPeriph 标准库)
+# G356 AHRS 陀螺仪模块 UART 通信接收示例工程 (STM32F103C8T6, StdPeriph 标准库)
+
+> 当前固件出厂和恢复出厂默认输出 48 字节常用扩展帧（`AA 55 04 2E`）；下方 56 字节布局仅描述可选的历史兼容帧。SPI 示例优先使用 `G356_ReadFrame()`，UART 解析器根据 Type/Length 自动确定帧长。完整格式参见根目录 `communication_protocol.md`。
 
 ## 技术支持与购买
 
@@ -46,9 +48,9 @@ G356 是 JYTech 自主研发的六轴 AHRS 陀螺仪模块，内部集成三轴�
 
 ---
 
-## 3. 56 字节数据帧结构 (Telemetry Frame Structure)
+## 3. 56 字节兼容帧结构 (Telemetry Frame Structure)
 
-G356 模块向外发送的数据为固定的 **56 字节** 遥测帧，结构与 SPI 接口完全一致：
+G356 模块向外发送的数据为默认 **48 字节** 常用扩展帧；下表列出可选的 **56 字节** 历史兼容帧，结构与 SPI 接口完全一致：
 
 | 字节偏移 | 字段名称 | 数据类型 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -79,7 +81,7 @@ G356 模块向外发送的数据为固定的 **56 字节** 遥测帧，结构与
 ## 4. 代码结构
 
 * **`HARDWARE/G356/g356_driver.h` / `g356_driver.c`** —— 可直接整体拷贝复用的 G356 驱动模块，**不依赖任何 STM32/StdPeriph 接口**，纯字节流处理（用的是 `<stdint.h>`/`<stdbool.h>` 标准类型，不是 StdPeriph 的 `u8`/`u16`），可移植到任意 MCU，和 HAL 版本完全是同一份代码：
-    1. **帧解析状态机** (`G356_FeedByte`)：UART 是连续字节流，没有片选信号天然分帧，所以驱动内部维护一个小状态机——逐字节喂给它，它自己搜索 `0xAA 0x55` 帧头（只在空闲态识别，避免被 payload 中偶然出现的同样字节误同步）、定长收集剩余 54 字节、校验类型/长度/校验和/帧尾。返回 `G356_FRAME_PENDING`（还没收完）/`G356_FRAME_VALID`（一帧校验通过）/`G356_FRAME_INVALID`（凑满 56 字节但校验失败，已自动复位重新搜索帧头）。
+    1. **帧解析状态机** (`G356_FeedByte`)：UART 是连续字节流，没有片选信号天然分帧，所以驱动内部维护一个小状态机——逐字节喂给它，它自己搜索 `0xAA 0x55` 帧头（只在空闲态识别，避免被 payload 中偶然出现的同样字节误同步）、根据 Type/Length 收集剩余字节、校验类型/长度/校验和/帧尾。返回 `G356_FRAME_PENDING`（还没收完）/`G356_FRAME_VALID`（一帧校验通过）/`G356_FRAME_INVALID`（收齐当前帧但校验失败，已自动复位重新搜索帧头）。
     2. **数据安全解析** (`G356_ParseData`)：用 `memcpy` 安全提取 `float` 数据；换算用乘以倒数代替浮点除法。
 * **`SYSTEM/usart/usart.c`** —— `uart1_init()`/`uart1_send_byte()`（调试口）+ `uart2_init()`/`uart2_recv_byte()`（G356 链路，阻塞接收）。
 * **`SYSTEM/delay/delay.c`** —— 基于 SysTick 的 `delay_us`/`delay_ms` 忙等待延时。

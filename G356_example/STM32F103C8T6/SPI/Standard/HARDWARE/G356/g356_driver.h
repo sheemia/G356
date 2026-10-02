@@ -15,18 +15,23 @@
 //   G356 MOSI  -> PB15 (SPI2_MOSI)      (G356 only transmits; this line can
 //                                        be left unconnected on real hardware)
 //
-// Reference clock: SPI2 at APB1/16 (~2.25MHz @72MHz sysclk), 8-bit words,
+// Reference clock: SPI2 at APB1/16 (2MHz @64MHz sysclk), 8-bit words,
 // MSB first. See ../../README.md for the full pin table and the 56-byte
 // telemetry frame layout.
 //
 // Usage in your own project:
 //   1. Copy g356_driver.h/.c (and ../SPI/spi.h/.c, which it depends on)
 //      into your project as-is.
-//   2. Call G356_ReadPacket() to get one validated 56-byte frame, then
+//   2. Call G356_ReadFrame() to get one validated 48/56/72-byte frame, then
 //      G356_ParseData() to convert it to engineering units.
 // ==========================================================================
 
-#define G356_FRAME_SIZE 56
+#define G356_LEGACY_FRAME_SIZE     56u
+#define G356_COMMON_FRAME_SIZE     48u
+#define G356_QUATERNION_FRAME_SIZE 72u
+#define G356_MAX_FRAME_SIZE        G356_QUATERNION_FRAME_SIZE
+/* Backward-compatible alias: existing applications remain 56-byte by default. */
+#define G356_FRAME_SIZE            G356_LEGACY_FRAME_SIZE
 
 // Raw-to-engineering-unit scale factors for the default sensor configuration
 // (Accel +/-16g, Gyro +/-4000dps). If you ever change G356's FSR settings,
@@ -53,6 +58,11 @@ typedef struct {
     float raw_gyro_x;  // 未量化、未扣校准offset的陀螺仪原始浮点值 X (单位: dps)
     float raw_gyro_y;  // 同上 Y
     float raw_gyro_z;  // 同上 Z
+    float quat_w;     // Quaternion scalar component (extended frame only)
+    float quat_x;
+    float quat_y;
+    float quat_z;
+    bool has_quaternion;
 } G356_Data_t;
 
 // Reads one 56-byte SPI frame from the G356 module and validates its header,
@@ -60,6 +70,8 @@ typedef struct {
 // Returns true and fills frame_buf (G356_FRAME_SIZE bytes) on success; returns
 // false if the frame failed validation (caller decides whether to retry).
 u8 G356_ReadPacket(u8 *frame_buf);
+u8 G356_ReadQuaternionPacket(u8 *frame_buf);
+u8 G356_ReadFrame(u8 *frame_buf, u8 *frame_size);
 
 // Parses an already-validated G356_FRAME_SIZE-byte buffer (as returned by
 // G356_ReadPacket) into engineering units.

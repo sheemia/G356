@@ -129,7 +129,8 @@ int main(void)
     G356_UART_PrintString("=========================================\r\n");
     G356_UART_PrintString("Starting data reading...\r\n");
 
-    uint8_t rx_raw_buf[G356_FRAME_SIZE]; // 原始接收缓冲区
+    uint8_t rx_frame_size = 0;
+    uint8_t rx_raw_buf[G356_MAX_FRAME_SIZE]; // 原始接收缓冲区
     G356_Data_t g356_data;               // 解析后的姿态数据结构体
     uint32_t success_count = 0;          // 成功包计数
     uint32_t fail_count = 0;             // 失败包计数
@@ -138,14 +139,14 @@ int main(void)
         // 延时 10ms 循环，实现约 100Hz 的数据采样率
         delay_ms(10);
 
-        // 尝试从 SPI 读取一个 56 字节数据包。每次 G356_ReadPacket() 都会在一次 CS 低电平内连续读满整帧。
+        // 尝试从 SPI 读取一个当前格式数据包。每次 G356_ReadFrame() 都会在一次 CS 低电平内连续读满整帧。
         bool read_ok = false;
         for (int retry = 0; retry < 3; retry++) {
-            if (G356_ReadPacket(rx_raw_buf)) {
+            if (G356_ReadFrame(rx_raw_buf, &rx_frame_size)) {
                 read_ok = true;
                 break;
             }
-            // 每次失败后短暂等待，再重新发起一次完整的 56 字节 SPI 事务
+            // 每次失败后短暂等待，再重新发起一次完整的当前格式 SPI 事务
             delay_cycles(160);
         }
 

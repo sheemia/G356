@@ -76,7 +76,7 @@ static void G356_UART_PrintFloat(float val, int decimals)
 
 int main(void)
 {
-    u8 rx_frame_buf[G356_FRAME_SIZE]; // 校验通过的完整帧缓冲区
+    u8 rx_frame_buf[G356_MAX_FRAME_SIZE]; // 校验通过的完整帧缓冲区
     G356_Data_t g356_data;            // 解析后的姿态数据结构体
     u32 valid_count = 0;              // 校验通过的帧计数
     u32 invalid_count = 0;            // 校验失败的帧计数

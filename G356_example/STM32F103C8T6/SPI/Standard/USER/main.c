@@ -88,7 +88,8 @@ static void G356_UART_PrintFloat(float val, int decimals)
 
 int main(void)
 {
-    u8 rx_raw_buf[G356_FRAME_SIZE]; // 原始接收缓冲区
+    u8 rx_frame_size = 0;
+    u8 rx_raw_buf[G356_MAX_FRAME_SIZE]; // 原始接收缓冲区
     G356_Data_t g356_data;          // 解析后的姿态数据结构体
     u32 success_count = 0;          // 成功包计数
     u32 fail_count = 0;             // 失败包计数
@@ -115,10 +116,10 @@ int main(void)
     while (1) {
         delay_ms(10); // 实现约 100Hz 的轮询读取速率
 
-        // 尝试从 SPI 读取一个 56 字节数据包 (带 2 次立即重试，消除主从机异步复位碰撞)
+        // 尝试从 SPI 读取一个当前格式数据包 (带 2 次立即重试，消除主从机异步复位碰撞)
         u8 read_ok = 0;
         for (int retry = 0; retry < 3; retry++) {
-            if (G356_ReadPacket(rx_raw_buf)) {
+            if (G356_ReadFrame(rx_raw_buf, &rx_frame_size)) {
                 read_ok = 1;
                 break;
             }

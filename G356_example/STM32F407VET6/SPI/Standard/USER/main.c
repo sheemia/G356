@@ -35,7 +35,8 @@ static void SystemClock_Config_168MHz_HSI(void)
 
 int main(void)
 {
-    uint8_t frame[G356_FRAME_LEN];
+    uint8_t frame[G356_MAX_FRAME_SIZE];
+    uint16_t frame_size;
     G356_Data_t data;
 
     SystemClock_Config_168MHz_HSI();
@@ -47,7 +48,7 @@ int main(void)
     printf("\r\nG356 STM32F407 Standard SPI example\r\n");
 
     while (1) {
-        if (SPI1_G356_ReadPacket(frame, G356_FRAME_LEN) && G356_ParseData(frame, &data)) {
+        if (SPI1_G356_ReadFrame(frame, &frame_size) && G356_ParseData(frame, &data)) {
             printf("ACC[g] %.3f %.3f %.3f  GYRO[dps] %.2f %.2f %.2f  RPY[deg] %.2f %.2f %.2f  T %.2f\r\n",
                    data.accel_x, data.accel_y, data.accel_z,
                    data.gyro_x, data.gyro_y, data.gyro_z,

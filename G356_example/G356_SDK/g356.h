@@ -10,20 +10,42 @@
 extern "C" {
 #endif
 
-#define G356_FRAME_SIZE              56u
+#define G356_LEGACY_FRAME_SIZE       56u
+#define G356_COMMON_FRAME_SIZE       48u
+#define G356_QUATERNION_FRAME_SIZE   72u
+#define G356_QUAT_ONLY_FRAME_SIZE     22u
+#define G356_MAX_FRAME_SIZE          G356_QUATERNION_FRAME_SIZE
+/* Legacy alias retained so existing applications stay source-compatible. */
+#define G356_FRAME_SIZE              G356_LEGACY_FRAME_SIZE
 #define G356_FIXED_CMD_SIZE           7u
 
 #define G356_FRAME_HEADER0         0xAAu
 #define G356_FRAME_HEADER1         0x55u
-#define G356_FRAME_TYPE_TELEMETRY  0x02u
-#define G356_FRAME_LENGTH          0x36u
+#define G356_FRAME_TYPE_TELEMETRY    0x02u
+#define G356_FRAME_TYPE_QUATERNION   0x03u
+#define G356_FRAME_TYPE_COMMON       0x04u
+#define G356_FRAME_TYPE_QUAT_ONLY    0x05u
+#define G356_FRAME_LENGTH            0x36u
+#define G356_QUATERNION_FRAME_LENGTH 0x46u
+#define G356_COMMON_FRAME_LENGTH     0x2Eu
+#define G356_QUAT_ONLY_FRAME_LENGTH  0x14u
 #define G356_FRAME_TAIL            0x5Au
+
+#define G356_FIELD_ACCEL            0x01u
+#define G356_FIELD_GYRO             0x02u
+#define G356_FIELD_EULER            0x04u
+#define G356_FIELD_TEMP             0x08u
+#define G356_FIELD_RAW_ACCEL        0x10u
+#define G356_FIELD_RAW_GYRO         0x20u
+#define G356_FIELD_QUATERNION       0x40u
+#define G356_FIELD_ALL              0x7Fu
 
 #define G356_ACCEL_LSB_PER_G       2048.0f
 #define G356_GYRO_LSB_PER_DPS      8.2f
 #define G356_TEMP_LSB_PER_DEGC     100.0f
 
 typedef struct {
+    uint8_t valid_fields;
     float accel_x;
     float accel_y;
     float accel_z;
@@ -40,6 +62,11 @@ typedef struct {
     float raw_gyro_x;
     float raw_gyro_y;
     float raw_gyro_z;
+    float quat_w;
+    float quat_x;
+    float quat_y;
+    float quat_z;
+    bool has_quaternion;
 } G356_Data_t;
 
 typedef enum {
@@ -59,7 +86,17 @@ typedef enum {
     G356_CMD_RECOVER_115200      = 0x19,
     G356_CMD_RESTORE_FACTORY     = 0x1E,
     G356_CMD_SET_ODR_DIVIDER     = 0x20,
+    G356_CMD_SET_TELEMETRY_FORMAT = 0x26,
+    G356_CMD_SET_TELEMETRY_FIELDS = 0x27,
 } G356_Command_t;
+
+typedef enum {
+    G356_TELEMETRY_LEGACY_56 = 0,
+    G356_TELEMETRY_QUATERNION_72 = 1,
+    G356_TELEMETRY_COMMON_48 = 2,
+    G356_TELEMETRY_QUAT_ONLY_22 = 3,
+    G356_TELEMETRY_CUSTOM = 4,
+} G356_TelemetryFormat_t;
 
 typedef enum {
     G356_BAUD_1200    = 0x00,
@@ -96,19 +133,24 @@ typedef enum {
 
 typedef struct {
     G356_Data_t data;
-    uint8_t frame[G356_FRAME_SIZE];
+    uint8_t frame[G356_MAX_FRAME_SIZE];
     uint32_t valid_count;
     uint32_t invalid_count;
     uint8_t parser_state;
     uint8_t parser_index;
-    uint8_t parser_buf[G356_FRAME_SIZE];
+    uint8_t parser_buf[G356_MAX_FRAME_SIZE];
+    uint8_t expected_frame_size;
 } G356_Handle_t;
 
 void G356_Init(G356_Handle_t *dev);
+void G356_SetExpectedTelemetryFormat(G356_Handle_t *dev, G356_TelemetryFormat_t format);
+void G356_SetExpectedTelemetryFields(G356_Handle_t *dev, uint8_t field_mask);
 G356_Result_t G356_Update(G356_Handle_t *dev);
 G356_Result_t G356_FeedByte(G356_Handle_t *dev, uint8_t byte);
 
 bool G356_ValidateFrame(const uint8_t *frame);
+uint8_t G356_GetFrameSize(uint8_t type, uint8_t length);
+uint8_t G356_GetFieldMask(uint8_t type, uint8_t length);
 void G356_ParseFrame(const uint8_t *frame, G356_Data_t *data);
 
 uint16_t G356_Crc16Xmodem(const uint8_t *data, uint16_t len);

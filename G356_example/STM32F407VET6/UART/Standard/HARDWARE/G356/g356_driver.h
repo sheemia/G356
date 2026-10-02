@@ -3,8 +3,13 @@
 
 #include "stm32f4xx.h"
 #include <stdint.h>
+#include <stdbool.h>
 
-#define G356_FRAME_LEN              56u
+#define G356_LEGACY_FRAME_SIZE      56u
+#define G356_COMMON_FRAME_SIZE      48u
+#define G356_QUATERNION_FRAME_SIZE  72u
+#define G356_MAX_FRAME_SIZE         G356_QUATERNION_FRAME_SIZE
+#define G356_FRAME_LEN              G356_COMMON_FRAME_SIZE
 #define G356_GYRO_LSB_PER_DPS       (8.2f)
 #define G356_ACCEL_LSB_PER_G        (2048.0f)
 #define G356_TEMP_LSB_PER_DEGC      (100.0f)
@@ -26,6 +31,11 @@ typedef struct {
     float raw_gyro_x;
     float raw_gyro_y;
     float raw_gyro_z;
+    float quat_w;
+    float quat_x;
+    float quat_y;
+    float quat_z;
+    uint8_t has_quaternion;
 } G356_Data_t;
 
 typedef enum {

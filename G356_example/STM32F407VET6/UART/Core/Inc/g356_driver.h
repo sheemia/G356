@@ -30,7 +30,11 @@
 //      returned buffer to get engineering units.
 // ==========================================================================
 
-#define G356_FRAME_SIZE 56
+#define G356_LEGACY_FRAME_SIZE     56u
+#define G356_COMMON_FRAME_SIZE     48u
+#define G356_QUATERNION_FRAME_SIZE 72u
+#define G356_MAX_FRAME_SIZE        G356_QUATERNION_FRAME_SIZE
+#define G356_FRAME_SIZE            G356_LEGACY_FRAME_SIZE
 
 // Raw-to-engineering-unit scale factors for the default sensor configuration
 // (Accel +/-16g, Gyro +/-4000dps). If you ever change G356's FSR settings,
@@ -57,12 +61,17 @@ typedef struct {
     float raw_gyro_x;  // 未量化、未扣校准offset的陀螺仪原始浮点值 X (单位: dps)
     float raw_gyro_y;  // 同上 Y
     float raw_gyro_z;  // 同上 Z
+    float quat_w;
+    float quat_x;
+    float quat_y;
+    float quat_z;
+    bool has_quaternion;
 } G356_Data_t;
 
 typedef enum {
     G356_FRAME_PENDING = 0, // 还没收完一整帧，继续喂下一个字节
-    G356_FRAME_VALID,       // out_frame_buf 已经是一个校验通过的完整 56 字节帧
-    G356_FRAME_INVALID,     // 凑够 56 字节但校验失败(帧头/类型/校验和/帧尾不对)，已自动重新搜索帧头
+    G356_FRAME_VALID,       // out_frame_buf 已经是一个校验通过的完整的当前格式帧
+    G356_FRAME_INVALID,     // 收齐当前格式帧但校验失败(帧头/类型/校验和/帧尾不对)，已自动重新搜索帧头
 } G356_FrameStatus;
 
 // Feeds one received UART byte into the frame parser state machine.

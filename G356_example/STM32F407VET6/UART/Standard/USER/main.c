@@ -35,7 +35,7 @@ static void SystemClock_Config_168MHz_HSI(void)
 int main(void)
 {
     uint8_t rx_byte;
-    uint8_t frame[G356_FRAME_LEN];
+    uint8_t frame[G356_MAX_FRAME_SIZE];
     G356_Data_t data;
 
     SystemClock_Config_168MHz_HSI();
